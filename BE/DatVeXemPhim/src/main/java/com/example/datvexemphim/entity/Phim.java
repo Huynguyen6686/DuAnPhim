@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import java.util.UUID;
 import java.time.LocalDateTime;
+import org.hibernate.annotations.ColumnDefault;
 
 @Getter
 @Setter
@@ -12,7 +13,7 @@ import java.time.LocalDateTime;
 @Table(name = "phim")
 public class Phim {
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @ColumnDefault("newsequentialid()")
     @Column(name = "id", nullable = false)
     private UUID id;
 
