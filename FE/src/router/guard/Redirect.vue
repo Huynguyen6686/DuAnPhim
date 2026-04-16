@@ -1,0 +1,128 @@
+<template>
+  <div class="redirect-container">
+    <div class="redirect-message">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      <span v-if="loading">Đang xử lý đăng nhập...</span>
+      <span v-else-if="error" class="error-message">{{ error }}</span>
+    </div>
+  </div>
+</template>
+
+<script lang="ts" setup>
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ROUTES_CONSTANTS } from '@/constants/path'
+import { ROLES } from '@/constants/roles'
+import { useAuthStore } from '@/stores/auth'
+import type { UserInformation } from '@/types/auth.type'
+import {
+  ACCESS_TOKEN_STORAGE_KEY,
+  REFRESH_TOKEN_STORAGE_KEY,
+  USER_INFO_STORAGE_KEY
+} from '@/constants/storagekey'
+import { localStorageAction } from '@/utils/storage'
+import { jwtDecode } from 'jwt-decode'
+
+const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+
+const loading = ref(true)
+const error = ref<string | null>(null)
+
+const base64UrlDecode = (str: string) => {
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/')
+  while (base64.length % 4) {
+    base64 += '='
+  }
+  return atob(base64)
+}
+
+const processOAuthCallback = async () => {
+  try {
+    const { state } = route.query
+    if (!state) throw new Error('Thiếu thông tin xác thực')
+
+    // Decode state (URL-safe base64)
+    const decodedState = JSON.parse(base64UrlDecode(state as string))
+    const { accessToken, refreshToken } = decodedState
+
+    if (!accessToken) throw new Error('Không tìm thấy access token')
+
+    // Decode JWT for user info
+    const decodedToken: any = jwtDecode(accessToken)
+    
+    // Normalize user object to match what app expects (UserInformation interface)
+    const user: UserInformation = {
+      userId: decodedToken.userId || decodedToken.sub,
+      userCode: decodedToken.userCode || decodedToken.email,
+      fullName: decodedToken.fullName || decodedToken.name,
+      email: decodedToken.email,
+      rolesName: decodedToken.rolesName || [],
+      rolesCode: decodedToken.rolesCode || [],
+      roleScreen: decodedToken.roleScreen || ROLES.CUSTOMER,
+      pictureUrl: decodedToken.pictureUrl || decodedToken.picture,
+      idFacility: decodedToken.idFacility || null,
+      roleSwitch: decodedToken.roleSwitch || null
+    }
+
+    // Store in localStorage
+    localStorageAction.set(ACCESS_TOKEN_STORAGE_KEY, accessToken)
+    if (refreshToken) {
+      localStorageAction.set(REFRESH_TOKEN_STORAGE_KEY, refreshToken)
+    }
+    localStorageAction.set(USER_INFO_STORAGE_KEY, user)
+
+    // Update store
+    authStore.user = user
+    authStore.accessToken = accessToken
+    authStore.refreshToken = refreshToken || null
+    authStore.userRole = user.roleScreen || null
+
+    // Always redirect to customer home page after login as requested
+    router.push({ name: ROUTES_CONSTANTS.CUSTOMER.children.HOME.name })
+  } catch (err) {
+    console.error('Login error:', err)
+    error.value = 'Đăng nhập thất bại. Vui lòng thử lại.'
+    setTimeout(() => router.push('/'), 2000)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  console.log('🚀 Redirect component mounted')
+  console.log('📍 Current path:', route.path)
+  console.log('🔍 Full route:', route)
+  processOAuthCallback()
+})
+</script>
+
+<style scoped>
+.redirect-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: #f0f0f0;
+}
+
+.redirect-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  font-size: 1.2rem;
+  color: #333;
+  text-align: center;
+  padding: 2rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.error-message {
+  color: #ff4d4f;
+  margin-top: 1rem;
+}
+</style>
